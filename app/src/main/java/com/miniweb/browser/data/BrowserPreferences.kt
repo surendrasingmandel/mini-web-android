@@ -22,7 +22,8 @@ data class BrowserSettings(
     val protection: ProtectionLevel = ProtectionLevel.STANDARD,
     val desktopMode: Boolean = false,
     val toolbarBottom: Boolean = true,
-    val homepage: String = ""
+    val homepage: String = "",
+    val wallpaperUri: String = ""
 )
 
 class BrowserPreferences(private val context: Context) {
@@ -39,6 +40,7 @@ class BrowserPreferences(private val context: Context) {
         val desktop = booleanPreferencesKey("desktop_mode")
         val toolbar = booleanPreferencesKey("toolbar_bottom")
         val homepage = stringPreferencesKey("homepage")
+        val wallpaperUri = stringPreferencesKey("wallpaper_uri")
     }
     val settings = context.dataStore.data.map { p ->
         BrowserSettings(
@@ -48,7 +50,8 @@ class BrowserPreferences(private val context: Context) {
             thirdPartyCookies = p[Keys.cookies] ?: true, suggestions = p[Keys.suggestions] ?: true,
             saveHistory = p[Keys.history] ?: true,
             protection = runCatching { ProtectionLevel.valueOf(p[Keys.protection] ?: "STANDARD") }.getOrDefault(ProtectionLevel.STANDARD),
-            desktopMode = p[Keys.desktop] ?: false, toolbarBottom = p[Keys.toolbar] ?: true, homepage = p[Keys.homepage] ?: ""
+            desktopMode = p[Keys.desktop] ?: false, toolbarBottom = p[Keys.toolbar] ?: true, homepage = p[Keys.homepage] ?: "",
+            wallpaperUri = p[Keys.wallpaperUri] ?: ""
         )
     }
     suspend fun update(block: (MutablePreferences) -> Unit) { context.dataStore.updateData { old -> old.toMutablePreferences().also(block) } }
@@ -63,4 +66,5 @@ class BrowserPreferences(private val context: Context) {
     suspend fun setDesktop(v: Boolean) = update { it[Keys.desktop] = v }
     suspend fun setToolbarBottom(v: Boolean) = update { it[Keys.toolbar] = v }
     suspend fun setHomepage(v: String) = update { it[Keys.homepage] = v }
+    suspend fun setWallpaper(v: String) = update { it[Keys.wallpaperUri] = v }
 }
