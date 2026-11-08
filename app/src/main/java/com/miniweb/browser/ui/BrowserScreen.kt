@@ -3,6 +3,7 @@ package com.miniweb.browser.ui
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -41,6 +42,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.miniweb.browser.data.*
 import com.miniweb.browser.engine.AdBlockEngine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import com.miniweb.browser.IncognitoActivity
+import com.miniweb.browser.WebPlaybackService
 import java.net.URLEncoder
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -101,7 +105,7 @@ fun BrowserScreen(
     var showSuggestions by remember { mutableStateOf(false) }
     var showHome by remember { mutableStateOf(true) }
     var showExitDialog by remember { mutableStateOf(false) }
-    var showIncognitoNotice by remember { mutableStateOf(false) }
+    var mediaServiceActive by remember { mutableStateOf(false) }
 
     val wallpaperPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -122,6 +126,13 @@ fun BrowserScreen(
 
     val history by dao.observeHistory()
         .collectAsState(initial = emptyList())
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.let { WebPlaybackService.detach(it) }
+            if (mediaServiceActive) WebPlaybackService.stop(context)
+        }
+    }
 
     // SEARCH AND NAVIGATION
     fun navigate(input: String) {
@@ -197,6 +208,29 @@ fun BrowserScreen(
                 currentUrl = ""
             }
             else -> showExitDialog = true
+        }
+    }
+
+    // Detect HTML5 media playback and keep the app in media foreground mode while it is active.
+    LaunchedEffect(showHome, currentUrl) {
+        if (showHome || currentUrl.isBlank()) {
+            if (mediaServiceActive) { WebPlaybackService.stop(context); mediaServiceActive = false }
+        } else {
+            while (!showHome) {
+                val currentView = webView
+                if (currentView == null) break
+                currentView.evaluateJavascript(
+                    "(function(){return Array.from(document.querySelectorAll('video,audio')).some(m=>!m.paused && !m.ended && m.readyState>1);})()"
+                ) { result ->
+                    val playing = result == "true"
+                    if (playing && !mediaServiceActive) {
+                        runCatching { WebPlaybackService.start(context); mediaServiceActive = true }
+                    } else if (!playing && mediaServiceActive) {
+                        WebPlaybackService.stop(context); mediaServiceActive = false
+                    }
+                }
+                delay(1800)
+            }
         }
     }
 
@@ -670,6 +704,7 @@ fun BrowserScreen(
                         }
 
                         webView = this
+                        WebPlaybackService.attach(this)
 
                         // Keep the WebView idle on startup.
                         // Mini Web's branded Compose homepage is the default screen.
@@ -701,7 +736,7 @@ fun BrowserScreen(
                     onPickWallpaper = { wallpaperPicker.launch(arrayOf("image/*")) },
                     onRemoveWallpaper = { scope.launch { preferences.setWallpaper("") } },
                     onIncognito = {
-                        showIncognitoNotice = true
+                        context.startActivity(Intent(context, IncognitoActivity::class.java))
                     },
                     onDownloads = { panel = Panel.DOWNLOADS },
                     onBookmarks = { panel = Panel.BOOKMARKS },
@@ -851,18 +886,6 @@ fun BrowserScreen(
                 }
             }
 
-            if (showIncognitoNotice) {
-                AlertDialog(
-                    onDismissRequest = { showIncognitoNotice = false },
-                    title = { Text("Private browsing") },
-                    text = { Text("Private browsing with isolated cookies and storage is not enabled in this build yet. It will be added using WebView profile isolation in the next development phase.") },
-                    confirmButton = {
-                        TextButton(onClick = { showIncognitoNotice = false }) {
-                            Text("OK")
-                        }
-                    }
-                )
-            }
 
             if (showExitDialog) {
                 AlertDialog(
