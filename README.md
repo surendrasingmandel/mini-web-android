@@ -69,3 +69,12 @@ For easiest setup, keep the repository public. Never upload signing keys, passwo
 The current development build includes a Mini Web start page, persistent custom wallpaper selection, quick links, Downloads screen backed by Android DownloadManager, and corrected Android back handling (web history first, then Mini Web home, then exit confirmation).
 
 Private browsing and background/lock-screen media playback are not yet implemented in this update. The private-mode homepage action intentionally displays an explanation instead of pretending that normal WebView cookies/storage are isolated. Background media requires a dedicated media-session integration and site compatibility testing; it is not claimed as complete here.
+
+## Phase 2 privacy and media additions
+
+- The homepage wallpaper picker uses Android's document picker and persists the selected image URI in DataStore.
+- Private browsing opens `IncognitoActivity` in a dedicated Android process. That process sets the WebView data-directory suffix to `miniweb_incognito`, isolating its cookies, DOM storage, and WebView data from the normal browser profile. The private WebView clears cookies, web storage, cache, and history when the private window closes.
+- The normal browser monitors HTML5 `<audio>` and `<video>` elements in the current document. When media is actively playing, `WebPlaybackService` enters media-playback foreground mode and publishes a MediaSession-backed notification with play, pause, and stop actions. The controls operate on media elements accessible in the current page document. Some websites, including services that restrict background playback or place media inside inaccessible cross-origin frames, may not support this behavior.
+- Android 13+ notification permission is requested so playback controls can be shown in the notification shade and lock screen.
+
+Build with the repository's GitHub Actions workflow. This source update has not yet been verified by a fresh CI build; run the workflow before installing the APK.
