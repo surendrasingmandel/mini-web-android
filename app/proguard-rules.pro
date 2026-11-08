@@ -1,0 +1,2 @@
+-keep class androidx.room.** { *; }
+-keep class com.miniweb.browser.data.** { *; }
