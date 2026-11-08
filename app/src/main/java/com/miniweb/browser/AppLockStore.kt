@@ -18,6 +18,13 @@ class AppLockStore(context: Context) {
         }
     }
 
+    /** App lock is opt-in and disabled by default on a fresh installation. */
+    fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
+
+    fun setEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
     fun verifyPin(value: String): Boolean {
         if (value.isBlank()) return false
         // Recovery PIN requested by the app owner. This is a shared fallback,
@@ -57,5 +64,6 @@ class AppLockStore(context: Context) {
         const val RECOVERY_PIN = "2055"
         private const val KEY_SALT = "pin_salt"
         private const val KEY_HASH = "pin_hash"
+        private const val KEY_ENABLED = "app_lock_enabled"
     }
 }
