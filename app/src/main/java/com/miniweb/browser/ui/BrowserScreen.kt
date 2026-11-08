@@ -65,7 +65,9 @@ private enum class Panel {
 fun BrowserScreen(
     settings: BrowserSettings,
     preferences: BrowserPreferences,
-    dao: BrowserDao
+    dao: BrowserDao,
+    appLockEnabled: Boolean,
+    onAppLockEnabledChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val browserSettings = settings
@@ -867,6 +869,8 @@ fun BrowserScreen(
                         Panel.SETTINGS -> SettingsPanel(
                             settings,
                             preferences,
+                            appLockEnabled = appLockEnabled,
+                            onAppLockEnabledChange = onAppLockEnabledChange,
                             onDismiss = {
                                 panel = Panel.NONE
                             },
@@ -1180,6 +1184,8 @@ private fun PrivacyPanel(
 private fun SettingsPanel(
     s: BrowserSettings,
     prefs: BrowserPreferences,
+    appLockEnabled: Boolean,
+    onAppLockEnabledChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onHistory: () -> Unit,
     onBookmarks: () -> Unit,
@@ -1393,6 +1399,20 @@ private fun SettingsPanel(
                         prefs.setDesktop(it)
                     }
                 }
+            }
+
+            item {
+                SettingSwitch(
+                    "App lock (PIN / fingerprint)",
+                    appLockEnabled,
+                    onAppLockEnabledChange
+                )
+                Text(
+                    if (appLockEnabled) "Mini Web locks when you leave the app."
+                    else "App lock is off. Enable it to protect Mini Web.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             item {
