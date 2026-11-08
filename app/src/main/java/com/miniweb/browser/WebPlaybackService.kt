@@ -19,6 +19,10 @@ import java.lang.ref.WeakReference
 /** Keeps the browser process in media-playback foreground mode while WebView media is playing. */
 class WebPlaybackService : Service() {
     private lateinit var session: MediaSession
+    private var mediaTitle: String = "Web video"
+    private var mediaArtist: String = "Mini Web"
+    private var mediaUrl: String = ""
+    private var isMediaPlaying: Boolean = true
 
     override fun onCreate() {
         super.onCreate()
@@ -41,8 +45,23 @@ class WebPlaybackService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_PAUSE -> { runMediaCommand("pause"); publishState(PlaybackState.STATE_PAUSED) }
-            ACTION_PLAY -> { runMediaCommand("play"); publishState(PlaybackState.STATE_PLAYING) }
+            ACTION_PAUSE -> {
+                isMediaPlaying = false
+                runMediaCommand("pause")
+                publishState(PlaybackState.STATE_PAUSED)
+            }
+            ACTION_PLAY -> {
+                isMediaPlaying = true
+                runMediaCommand("play")
+                publishState(PlaybackState.STATE_PLAYING)
+            }
+            ACTION_UPDATE, ACTION_START -> {
+                mediaTitle = intent.getStringExtra(EXTRA_TITLE) ?: mediaTitle
+                mediaArtist = intent.getStringExtra(EXTRA_ARTIST) ?: mediaArtist
+                mediaUrl = intent.getStringExtra(EXTRA_URL) ?: mediaUrl
+                isMediaPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, true)
+                publishMetadataAndState()
+            }
         }
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -60,8 +79,8 @@ class WebPlaybackService : Service() {
         val launch = PendingIntent.getActivity(this, 4, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_mini_web)
-            .setContentTitle("Mini Web")
-            .setContentText("Media playing in browser")
+            .setContentTitle(mediaTitle)
+            .setContentText(mediaArtist)
             .setContentIntent(launch)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
@@ -77,7 +96,18 @@ class WebPlaybackService : Service() {
     private fun publishState(state: Int) {
         val actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_STOP
         session.setPlaybackState(PlaybackState.Builder().setActions(actions).setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f).build())
-        session.setMetadata(android.media.MediaMetadata.Builder().putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Mini Web browser media").putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Mini Web").build())
+        session.setMetadata(android.media.MediaMetadata.Builder()
+            .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, mediaTitle)
+            .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, mediaArtist)
+            .putString(android.media.MediaMetadata.METADATA_KEY_MEDIA_URI, mediaUrl)
+            .build())
+    }
+
+    private fun publishMetadataAndState() {
+        publishState(if (isMediaPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+        }
     }
 
     private fun runMediaCommand(command: String) {
@@ -106,12 +136,36 @@ class WebPlaybackService : Service() {
         const val ACTION_STOP = "com.miniweb.browser.media.STOP"
         const val ACTION_PLAY = "com.miniweb.browser.media.PLAY"
         const val ACTION_PAUSE = "com.miniweb.browser.media.PAUSE"
+        private const val ACTION_UPDATE = "com.miniweb.browser.media.UPDATE"
+        private const val EXTRA_TITLE = "media_title"
+        private const val EXTRA_ARTIST = "media_artist"
+        private const val EXTRA_URL = "media_url"
+        private const val EXTRA_IS_PLAYING = "media_is_playing"
         private const val CHANNEL_ID = "mini_web_media"
         private const val NOTIFICATION_ID = 3107
         @Volatile private var activeWebView: WeakReference<WebView>? = null
         fun attach(view: WebView) { activeWebView = WeakReference(view) }
         fun detach(view: WebView) { if (activeWebView?.get() === view) activeWebView = null }
-        fun start(context: Context) { context.startForegroundService(Intent(context, WebPlaybackService::class.java).setAction(ACTION_START)) }
+        fun start(context: Context) {
+            val intent = Intent(context, WebPlaybackService::class.java).setAction(ACTION_START)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+        }
+        fun start(context: Context, title: String, url: String, artist: String) {
+            val intent = Intent(context, WebPlaybackService::class.java).setAction(ACTION_START)
+                .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_ARTIST, artist)
+                .putExtra(EXTRA_IS_PLAYING, true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+        }
+        fun update(context: Context, title: String, url: String, isPlaying: Boolean, artist: String) {
+            val intent = Intent(context, WebPlaybackService::class.java).setAction(ACTION_UPDATE)
+                .putExtra(EXTRA_TITLE, title)
+                .putExtra(EXTRA_URL, url)
+                .putExtra(EXTRA_ARTIST, artist)
+                .putExtra(EXTRA_IS_PLAYING, isPlaying)
+            context.startService(intent)
+        }
         fun stop(context: Context) { context.startService(Intent(context, WebPlaybackService::class.java).setAction(ACTION_STOP)) }
     }
 }
