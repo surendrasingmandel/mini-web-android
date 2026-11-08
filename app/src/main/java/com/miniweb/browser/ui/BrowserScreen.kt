@@ -9,7 +9,10 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,6 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
+import android.widget.ImageView
+import android.graphics.Color as AndroidColor
+import android.app.DownloadManager.Query
+import android.database.Cursor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,7 +53,7 @@ private data class BrowserTab(
 )
 
 private enum class Panel {
-    NONE, TABS, BOOKMARKS, HISTORY, SETTINGS, PRIVACY
+    NONE, TABS, BOOKMARKS, HISTORY, SETTINGS, PRIVACY, DOWNLOADS
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +99,23 @@ fun BrowserScreen(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     var showSuggestions by remember { mutableStateOf(false) }
+    var showHome by remember { mutableStateOf(true) }
+    var showExitDialog by remember { mutableStateOf(false) }
+    var showIncognitoNotice by remember { mutableStateOf(false) }
+
+    val wallpaperPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            scope.launch { preferences.setWallpaper(uri.toString()) }
+        }
+    }
 
     val bookmarks by dao.observeBookmarks()
         .collectAsState(initial = emptyList())
@@ -151,19 +178,25 @@ fun BrowserScreen(
         }?.url = url
 
         address = url
+        showHome = false
         webView?.loadUrl(url)
         showSuggestions = false
     }
 
-    // ANDROID BACK BUTTON
-    BackHandler(
-        enabled = panel != Panel.NONE ||
-                (webView?.canGoBack() == true)
-    ) {
-        if (panel != Panel.NONE) {
-            panel = Panel.NONE
-        } else {
-            webView?.goBack()
+    // Android back: close overlays first, then WebView history, then home.
+    // On the home page show an exit confirmation instead of immediately leaving the app.
+    BackHandler(enabled = true) {
+        when {
+            panel != Panel.NONE -> panel = Panel.NONE
+            showSuggestions -> showSuggestions = false
+            !showHome && webView?.canGoBack() == true -> webView?.goBack()
+            !showHome -> {
+                webView?.stopLoading()
+                showHome = true
+                address = ""
+                currentUrl = ""
+            }
+            else -> showExitDialog = true
         }
     }
 
@@ -172,7 +205,7 @@ fun BrowserScreen(
 
         // TOP ADDRESS BAR
         topBar = {
-            Column(
+            if (!showHome) Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
@@ -311,7 +344,7 @@ fun BrowserScreen(
 
         // BOTTOM NAVIGATION
         bottomBar = {
-            NavigationBar {
+            if (!showHome) NavigationBar {
 
                 NavigationBarItem(
                     selected = false,
@@ -385,6 +418,18 @@ fun BrowserScreen(
                 )
 
                 NavigationBarItem(
+                    selected = false,
+                    onClick = {
+                        showHome = true
+                        address = ""
+                        currentUrl = ""
+                    },
+                    icon = {
+                        Icon(Icons.Default.Home, "Home")
+                    }
+                )
+
+                NavigationBarItem(
                     selected = panel == Panel.SETTINGS,
                     onClick = {
                         panel = Panel.SETTINGS
@@ -406,7 +451,7 @@ fun BrowserScreen(
                 .padding(padding)
         ) {
 
-            // WEBVIEW
+            // Browser engine is mounted only while a page is open.
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
 
@@ -652,6 +697,24 @@ fun BrowserScreen(
                 }
             )
 
+            if (showHome && panel == Panel.NONE) {
+                MiniWebHome(
+                    wallpaperUri = settings.wallpaperUri,
+                    onSearch = { navigate(it) },
+                    onPickWallpaper = { wallpaperPicker.launch(arrayOf("image/*")) },
+                    onRemoveWallpaper = { scope.launch { preferences.setWallpaper("") } },
+                    onIncognito = {
+                        showIncognitoNotice = true
+                    },
+                    onDownloads = { panel = Panel.DOWNLOADS },
+                    onBookmarks = { panel = Panel.BOOKMARKS },
+                    onHistory = { panel = Panel.HISTORY },
+                    onSettings = { panel = Panel.SETTINGS },
+                    onTabs = { panel = Panel.TABS },
+                    onOpenShortcut = { navigate(it) }
+                )
+            }
+
             // BROWSER PANELS
             if (panel != Panel.NONE) {
 
@@ -756,6 +819,11 @@ fun BrowserScreen(
                             }
                         )
 
+                        Panel.DOWNLOADS -> DownloadsPanel(
+                            context = context,
+                            onDismiss = { panel = Panel.NONE }
+                        )
+
                         Panel.PRIVACY -> PrivacyPanel(
                             blocked = blockedCount,
                             settings = settings,
@@ -784,6 +852,38 @@ fun BrowserScreen(
                         Panel.NONE -> Unit
                     }
                 }
+            }
+
+            if (showIncognitoNotice) {
+                AlertDialog(
+                    onDismissRequest = { showIncognitoNotice = false },
+                    title = { Text("Private browsing") },
+                    text = { Text("Private browsing with isolated cookies and storage is not enabled in this build yet. It will be added using WebView profile isolation in the next development phase.") },
+                    confirmButton = {
+                        TextButton(onClick = { showIncognitoNotice = false }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+
+            if (showExitDialog) {
+                AlertDialog(
+                    onDismissRequest = { showExitDialog = false },
+                    title = { Text("Exit Mini Web?") },
+                    text = { Text("Are you sure you want to close the browser?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showExitDialog = false
+                            (context as? android.app.Activity)?.finish()
+                        }) { Text("Exit") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showExitDialog = false }) {
+                            Text("Stay")
+                        }
+                    }
+                )
             }
         }
     }
@@ -1343,3 +1443,267 @@ private fun SettingSwitch(
         )
     }
 }
+
+
+@Composable
+private fun MiniWebHome(
+    wallpaperUri: String,
+    onSearch: (String) -> Unit,
+    onPickWallpaper: () -> Unit,
+    onRemoveWallpaper: () -> Unit,
+    onIncognito: () -> Unit,
+    onDownloads: () -> Unit,
+    onBookmarks: () -> Unit,
+    onHistory: () -> Unit,
+    onSettings: () -> Unit,
+    onTabs: () -> Unit,
+    onOpenShortcut: (String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val shortcuts = listOf(
+        "DuckDuckGo" to "https://duckduckgo.com",
+        "YouTube" to "https://m.youtube.com",
+        "Google" to "https://www.google.com",
+        "Wikipedia" to "https://www.wikipedia.org"
+    )
+
+    Box(Modifier.fillMaxSize()) {
+        if (wallpaperUri.isNotBlank()) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    ImageView(ctx).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setImageURI(Uri.parse(wallpaperUri))
+                    }
+                },
+                update = { image -> image.setImageURI(Uri.parse(wallpaperUri)) }
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f)))
+        } else {
+            Box(
+                Modifier.fillMaxSize().background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surface
+                        )
+                    )
+                )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)) {
+                    Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                        Text("M", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text("MINI WEB", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Fast. Private. Fully Yours.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Homepage menu")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("Change wallpaper") }, leadingIcon = { Icon(Icons.Default.Wallpaper, null) }, onClick = { menuExpanded = false; onPickWallpaper() })
+                    DropdownMenuItem(text = { Text("Remove wallpaper") }, leadingIcon = { Icon(Icons.Default.ImageNotSupported, null) }, onClick = { menuExpanded = false; onRemoveWallpaper() })
+                    DropdownMenuItem(text = { Text("Open tabs") }, leadingIcon = { Icon(Icons.Default.Tab, null) }, onClick = { menuExpanded = false; onTabs() })
+                    DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(Icons.Default.Settings, null) }, onClick = { menuExpanded = false; onSettings() })
+                }
+            }
+
+            Spacer(Modifier.height(42.dp))
+            Text("Mini Web", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = if (wallpaperUri.isNotBlank()) Color.White else MaterialTheme.colorScheme.onBackground)
+            Text("Fast. Private. Fully Yours.", style = MaterialTheme.typography.bodyMedium, color = if (wallpaperUri.isNotBlank()) Color.White.copy(alpha = .85f) else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(28.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(30.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = if (wallpaperUri.isNotBlank()) .96f else 1f),
+                shadowElevation = 5.dp
+            ) {
+                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    androidx.compose.material3.OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Search privately or enter URL") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Go),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onGo = { onSearch(query) })
+                    )
+                    IconButton(onClick = { onSearch(query) }, enabled = query.isNotBlank()) {
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Go")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FilledTonalButton(onClick = onIncognito, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.VisibilityOff, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Private mode")
+                }
+                FilledTonalButton(onClick = onDownloads, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Downloads")
+                }
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Your shortcuts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                TextButton(onClick = onBookmarks) { Text("Bookmarks") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                shortcuts.forEach { (name, url) ->
+                    Surface(
+                        modifier = Modifier.weight(1f).clickable { onOpenShortcut(url) },
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+                        tonalElevation = 2.dp
+                    ) {
+                        Column(Modifier.padding(vertical = 14.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .13f)) {
+                                Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                                    Text(name.take(1), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Spacer(Modifier.height(7.dp))
+                            Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onHistory, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.History, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("History")
+                }
+                OutlinedButton(onClick = onSettings, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Settings, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Settings")
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text("DuckDuckGo is your default search engine", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun DownloadsPanel(
+    context: Context,
+    onDismiss: () -> Unit
+) {
+    var downloads by remember { mutableStateOf<List<DownloadRow>>(emptyList()) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(refreshKey) {
+        downloads = withContext(Dispatchers.IO) {
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            val cursor = manager.query(Query().setFilterByStatus(
+                DownloadManager.STATUS_PENDING or DownloadManager.STATUS_RUNNING or
+                    DownloadManager.STATUS_PAUSED or DownloadManager.STATUS_SUCCESSFUL or
+                    DownloadManager.STATUS_FAILED
+            ))
+            val rows = mutableListOf<DownloadRow>()
+            cursor?.use { c ->
+                val idCol = c.getColumnIndex(DownloadManager.COLUMN_ID)
+                val titleCol = c.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                val statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                val reasonCol = c.getColumnIndex(DownloadManager.COLUMN_REASON)
+                val localCol = c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                while (c.moveToNext()) {
+                    val status = c.getInt(statusCol)
+                    val label = when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> "Completed"
+                        DownloadManager.STATUS_FAILED -> "Failed"
+                        DownloadManager.STATUS_PAUSED -> "Paused"
+                        DownloadManager.STATUS_RUNNING -> "Downloading"
+                        else -> "Waiting"
+                    }
+                    rows += DownloadRow(
+                        id = c.getLong(idCol),
+                        title = c.getString(titleCol) ?: "Downloaded file",
+                        status = label,
+                        localUri = if (localCol >= 0) c.getString(localCol) else null
+                    )
+                }
+            }
+            rows.reversed()
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Downloads", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            IconButton(onClick = { refreshKey++ }) { Icon(Icons.Default.Refresh, "Refresh") }
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") }
+        }
+        if (downloads.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Download, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(10.dp))
+                    Text("No downloads yet")
+                    Text("Files downloaded in Mini Web will appear here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            LazyColumn {
+                items(downloads, key = { it.id }) { item ->
+                    ListItem(
+                        headlineContent = { Text(item.title, maxLines = 1) },
+                        supportingContent = { Text(item.status) },
+                        leadingContent = { Icon(if (item.status == "Completed") Icons.Default.InsertDriveFile else Icons.Default.Downloading, null) },
+                        trailingContent = {
+                            if (item.status == "Completed" && !item.localUri.isNullOrBlank()) {
+                                IconButton(onClick = {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        setDataAndType(Uri.parse(item.localUri), "*/*")
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    runCatching { context.startActivity(intent) }
+                                }) { Icon(Icons.Default.OpenInNew, "Open") }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class DownloadRow(
+    val id: Long,
+    val title: String,
+    val status: String,
+    val localUri: String?
+)
