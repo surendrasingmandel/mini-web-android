@@ -106,6 +106,8 @@ fun BrowserScreen(
     var showHome by remember { mutableStateOf(true) }
     var showExitDialog by remember { mutableStateOf(false) }
     var mediaServiceActive by remember { mutableStateOf(false) }
+    val latestWebView by rememberUpdatedState(webView)
+    val latestMediaServiceActive by rememberUpdatedState(mediaServiceActive)
 
     val wallpaperPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -129,8 +131,8 @@ fun BrowserScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            webView?.let { WebPlaybackService.detach(it) }
-            if (mediaServiceActive) WebPlaybackService.stop(context)
+            latestWebView?.let { WebPlaybackService.detach(it) }
+            if (latestMediaServiceActive) WebPlaybackService.stop(context)
         }
     }
 
@@ -211,25 +213,75 @@ fun BrowserScreen(
         }
     }
 
-    // Detect HTML5 media playback and keep the app in media foreground mode while it is active.
+    // Monitor HTML5 media. The foreground service owns the lock-screen session
+    // and notification while a page's media is playing or temporarily paused.
     LaunchedEffect(showHome, currentUrl) {
         if (showHome || currentUrl.isBlank()) {
-            if (mediaServiceActive) { WebPlaybackService.stop(context); mediaServiceActive = false }
+            if (mediaServiceActive) {
+                WebPlaybackService.stop(context)
+                mediaServiceActive = false
+            }
         } else {
-            while (!showHome) {
-                val currentView = webView
-                if (currentView == null) break
+            while (true) {
+                val currentView = webView ?: break
                 currentView.evaluateJavascript(
-                    "(function(){return Array.from(document.querySelectorAll('video,audio')).some(m=>!m.paused && !m.ended && m.readyState>1);})()"
+                    """
+                    (function() {
+                      var media = Array.from(document.querySelectorAll('video,audio'));
+                      var current = media.find(function(m) {
+                        return !m.ended && (m.currentTime > 0 || !m.paused);
+                      }) || media.find(function(m) { return !m.ended && m.readyState > 1; });
+                      var playing = media.some(function(m) {
+                        return !m.paused && !m.ended && m.readyState > 1;
+                      });
+                      var title = document.title || 'Web video';
+                      if (current) {
+                        title = current.getAttribute('title') ||
+                                current.getAttribute('aria-label') ||
+                                current.closest('[aria-label]')?.getAttribute('aria-label') ||
+                                title;
+                      }
+                      return JSON.stringify({
+                        hasMedia: !!current,
+                        playing: playing,
+                        title: title,
+                        artist: location.hostname || 'Mini Web',
+                        url: location.href
+                      });
+                    })();
+                    """.trimIndent()
                 ) { result ->
-                    val playing = result == "true"
+                    val info = runCatching {
+                        org.json.JSONTokener(result).nextValue() as? org.json.JSONObject
+                    }.getOrNull()
+
+                    val hasMedia = info?.optBoolean("hasMedia", false) == true
+                    val playing = info?.optBoolean("playing", false) == true
+                    val title = info?.optString("title").orEmpty().ifBlank { "Web video" }
+                    val artist = info?.optString("artist").orEmpty().ifBlank { "Mini Web" }
+                    val mediaUrl = info?.optString("url").orEmpty().ifBlank { currentUrl }
+
                     if (playing && !mediaServiceActive) {
-                        runCatching { WebPlaybackService.start(context); mediaServiceActive = true }
-                    } else if (!playing && mediaServiceActive) {
-                        WebPlaybackService.stop(context); mediaServiceActive = false
+                        runCatching {
+                            WebPlaybackService.start(context, title, mediaUrl, artist)
+                            mediaServiceActive = true
+                        }
+                    } else if (mediaServiceActive && hasMedia) {
+                        runCatching {
+                            WebPlaybackService.update(
+                                context = context,
+                                title = title,
+                                url = mediaUrl,
+                                isPlaying = playing,
+                                artist = artist
+                            )
+                        }
+                    } else if (mediaServiceActive && !hasMedia) {
+                        WebPlaybackService.stop(context)
+                        mediaServiceActive = false
                     }
                 }
-                delay(1800)
+                delay(1500)
             }
         }
     }
@@ -715,6 +767,7 @@ fun BrowserScreen(
                 update = { view ->
 
                     webView = view
+                    WebPlaybackService.attach(view)
 
                     view.settings.userAgentString = userAgentFor(
                         context,
