@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -211,10 +212,11 @@ private fun AppLockScreen(
     onBiometric: () -> Unit,
     onChangePin: () -> Unit
 ) {
+    val context = LocalContext.current
     var value by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
-    val biometricAvailable = remember {
-        BiometricManager.from(androidx.compose.ui.platform.LocalContext.current)
+    val biometricAvailable = remember(context) {
+        BiometricManager.from(context)
             .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
