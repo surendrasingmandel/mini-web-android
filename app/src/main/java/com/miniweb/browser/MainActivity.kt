@@ -63,6 +63,7 @@ class MainActivity : FragmentActivity() {
             )
             var splash by remember { mutableStateOf(true) }
             var unlocked by remember { mutableStateOf(false) }
+            var appLockEnabled by remember { mutableStateOf(appLockStore.isEnabled()) }
             var error by remember { mutableStateOf("") }
             var changePinMode by remember { mutableStateOf(false) }
             var currentPin by remember { mutableStateOf("") }
@@ -71,7 +72,7 @@ class MainActivity : FragmentActivity() {
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_STOP) unlocked = false
+                    if (event == Lifecycle.Event.ON_STOP && appLockStore.isEnabled()) unlocked = false
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -96,7 +97,7 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-                    !unlocked -> AppLockScreen(
+                    appLockEnabled && !unlocked -> AppLockScreen(
                         error = error,
                         onUnlock = { pin ->
                             if (appLockStore.verifyPin(pin)) {
@@ -114,7 +115,13 @@ class MainActivity : FragmentActivity() {
                     else -> BrowserScreen(
                         settings = settings,
                         preferences = preferences,
-                        dao = database.browserDao()
+                        dao = database.browserDao(),
+                        appLockEnabled = appLockEnabled,
+                        onAppLockEnabledChange = { enabled ->
+                            appLockStore.setEnabled(enabled)
+                            appLockEnabled = enabled
+                            unlocked = true
+                        }
                     )
                 }
 
