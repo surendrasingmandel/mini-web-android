@@ -1,7 +1,6 @@
 
 package com.miniweb.browser.ui
 
-import androidx.compose.foundation.layout.statusBarsPadding
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
@@ -13,6 +12,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,7 +56,6 @@ fun BrowserScreen(
     val context = LocalContext.current
     val browserSettings = settings
     val scope = rememberCoroutineScope()
-
     val adBlocker = remember { AdBlockEngine() }
 
     val tabs = remember {
@@ -73,9 +72,7 @@ fun BrowserScreen(
     val latestActiveId by rememberUpdatedState(activeId)
     val latestPrivateMode by rememberUpdatedState(activeTab.privateMode)
 
-    var webView by remember {
-        mutableStateOf<WebView?>(null)
-    }
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
     var address by remember { mutableStateOf("") }
     var pageTitle by remember { mutableStateOf("Mini Web") }
@@ -99,6 +96,7 @@ fun BrowserScreen(
     val history by dao.observeHistory()
         .collectAsState(initial = emptyList())
 
+    // SEARCH AND NAVIGATION
     fun navigate(input: String) {
         val raw = input.trim()
 
@@ -157,6 +155,7 @@ fun BrowserScreen(
         showSuggestions = false
     }
 
+    // ANDROID BACK BUTTON
     BackHandler(
         enabled = panel != Panel.NONE ||
                 (webView?.canGoBack() == true)
@@ -171,42 +170,52 @@ fun BrowserScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
 
+        // TOP ADDRESS BAR
         topBar = {
             Column(
-                Modifier
+                modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .background(MaterialTheme.colorScheme.surface)
             ) {
+
                 if (loading) {
                     LinearProgressIndicator(
-                        Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
 
                 Row(
-                    Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = 8.dp
+                        ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+
+                    // MINI WEB LOGO
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primary.copy(
-                            alpha = .12f
+                            alpha = 0.12f
                         ),
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 "M",
                                 color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleLarge
                             )
                         }
                     }
 
                     Spacer(Modifier.width(8.dp))
 
+                    // ADDRESS BAR
                     OutlinedTextField(
                         value = address,
                         onValueChange = {
@@ -215,45 +224,60 @@ fun BrowserScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = 48.dp),
+                            .heightIn(min = 52.dp),
                         singleLine = true,
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(22.dp),
                         placeholder = {
                             Text("Search or enter address")
                         },
                         leadingIcon = {
                             Icon(
                                 Icons.Default.Search,
-                                contentDescription = null
+                                contentDescription = "Search"
                             )
                         },
                         trailingIcon = {
                             if (address.isNotEmpty()) {
                                 IconButton(
-                                    onClick = { address = "" }
+                                    onClick = {
+                                        address = ""
+                                    }
                                 ) {
                                     Icon(
                                         Icons.Default.Close,
-                                        "Clear"
+                                        contentDescription = "Clear"
                                     )
                                 }
                             }
                         },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            imeAction = ImeAction.Go
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onGo = { navigate(address) }
-                        )
+                        keyboardOptions =
+                            androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = ImeAction.Go
+                            ),
+                        keyboardActions =
+                            androidx.compose.foundation.text.KeyboardActions(
+                                onGo = {
+                                    navigate(address)
+                                }
+                            )
                     )
 
+                    Spacer(Modifier.width(4.dp))
+
+                    // TAB BUTTON
                     IconButton(
-                        onClick = { panel = Panel.TABS }
+                        onClick = {
+                            panel = Panel.TABS
+                        }
                     ) {
-                        Icon(Icons.Default.Tab, "Tabs")
+                        Icon(
+                            Icons.Default.Tab,
+                            contentDescription = "Tabs"
+                        )
                     }
                 }
 
+                // SEARCH SUGGESTIONS
                 if (
                     showSuggestions &&
                     settings.suggestions &&
@@ -266,15 +290,17 @@ fun BrowserScreen(
 
                     matches.forEach { entry ->
                         Text(
-                            entry.title.ifBlank { entry.url },
-                            Modifier
+                            text = entry.title.ifBlank {
+                                entry.url
+                            },
+                            modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     navigate(entry.url)
                                 }
                                 .padding(
                                     horizontal = 22.dp,
-                                    vertical = 8.dp
+                                    vertical = 10.dp
                                 ),
                             maxLines = 1
                         )
@@ -283,15 +309,20 @@ fun BrowserScreen(
             }
         },
 
+        // BOTTOM NAVIGATION
         bottomBar = {
             NavigationBar {
+
                 NavigationBarItem(
                     selected = false,
                     onClick = {
                         webView?.goBack()
                     },
                     icon = {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            "Back"
+                        )
                     },
                     enabled = canGoBack
                 )
@@ -302,7 +333,10 @@ fun BrowserScreen(
                         webView?.goForward()
                     },
                     icon = {
-                        Icon(Icons.Default.ArrowForward, "Forward")
+                        Icon(
+                            Icons.Default.ArrowForward,
+                            "Forward"
+                        )
                     },
                     enabled = canGoForward
                 )
@@ -321,7 +355,10 @@ fun BrowserScreen(
                         }
                     },
                     icon = {
-                        Icon(Icons.Default.Refresh, "Reload")
+                        Icon(
+                            Icons.Default.Refresh,
+                            "Reload"
+                        )
                     }
                 )
 
@@ -340,7 +377,10 @@ fun BrowserScreen(
                         }
                     },
                     icon = {
-                        Icon(Icons.Default.Bookmark, "Bookmark")
+                        Icon(
+                            Icons.Default.Bookmark,
+                            "Bookmark"
+                        )
                     }
                 )
 
@@ -350,7 +390,10 @@ fun BrowserScreen(
                         panel = Panel.SETTINGS
                     },
                     icon = {
-                        Icon(Icons.Default.Settings, "Settings")
+                        Icon(
+                            Icons.Default.Settings,
+                            "Settings"
+                        )
                     }
                 )
             }
@@ -363,6 +406,7 @@ fun BrowserScreen(
                 .padding(padding)
         ) {
 
+            // WEBVIEW
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
 
@@ -375,7 +419,7 @@ fun BrowserScreen(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
 
-                        // FIX: Explicitly access WebView settings.
+                        // WEBVIEW SETTINGS
                         this.settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
@@ -411,6 +455,7 @@ fun BrowserScreen(
 
                         webViewClient = object : WebViewClient() {
 
+                            // AD AND TRACKER BLOCKING
                             override fun shouldInterceptRequest(
                                 view: WebView?,
                                 request: WebResourceRequest?
@@ -430,6 +475,7 @@ fun BrowserScreen(
                                         latestSettings.trackerBlocking
                                     )
                                 ) {
+
                                     val total =
                                         blockedCounter.incrementAndGet()
 
@@ -453,11 +499,13 @@ fun BrowserScreen(
                                 )
                             }
 
+                            // PAGE STARTED
                             override fun onPageStarted(
                                 view: WebView?,
                                 url: String?,
                                 favicon: android.graphics.Bitmap?
                             ) {
+
                                 loading = true
 
                                 url?.let {
@@ -469,10 +517,12 @@ fun BrowserScreen(
                                 canGoForward = view?.canGoForward() == true
                             }
 
+                            // PAGE FINISHED
                             override fun onPageFinished(
                                 view: WebView?,
                                 url: String?
                             ) {
+
                                 loading = false
 
                                 pageTitle = view?.title ?: "Mini Web"
@@ -506,6 +556,7 @@ fun BrowserScreen(
                                 }
                             }
 
+                            // SSL ERROR SECURITY
                             override fun onReceivedSslError(
                                 view: WebView?,
                                 handler: SslErrorHandler?,
@@ -514,6 +565,7 @@ fun BrowserScreen(
                                 handler?.cancel()
                             }
 
+                            // URL SCHEME VALIDATION
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?
@@ -528,6 +580,7 @@ fun BrowserScreen(
                             }
                         }
 
+                        // DOWNLOAD MANAGER
                         setDownloadListener {
                                 url,
                                 userAgent,
@@ -536,6 +589,7 @@ fun BrowserScreen(
                                 _ ->
 
                             runCatching {
+
                                 val request =
                                     DownloadManager.Request(Uri.parse(url)).apply {
 
@@ -585,7 +639,6 @@ fun BrowserScreen(
 
                     webView = view
 
-                    // Correct WebView settings access.
                     view.settings.userAgentString = userAgentFor(
                         context,
                         latestSettings.desktopMode
@@ -599,10 +652,11 @@ fun BrowserScreen(
                 }
             )
 
+            // BROWSER PANELS
             if (panel != Panel.NONE) {
 
                 Surface(
-                    Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
 
@@ -735,6 +789,7 @@ fun BrowserScreen(
     }
 }
 
+// USER AGENT
 private fun userAgentFor(
     context: Context,
     desktop: Boolean
@@ -755,6 +810,7 @@ private fun userAgentFor(
     }
 }
 
+// TABS PANEL
 @Composable
 private fun TabsPanel(
     tabs: List<BrowserTab>,
@@ -835,7 +891,10 @@ private fun TabsPanel(
                                 onClose(tab.id)
                             }
                         ) {
-                            Icon(Icons.Default.Close, "Close tab")
+                            Icon(
+                                Icons.Default.Close,
+                                "Close tab"
+                            )
                         }
                     }
                 }
@@ -844,6 +903,7 @@ private fun TabsPanel(
     }
 }
 
+// BOOKMARK AND HISTORY PANEL
 @Composable
 private fun SimpleListPanel(
     title: String,
@@ -901,6 +961,7 @@ private fun SimpleListPanel(
     }
 }
 
+// PRIVACY DASHBOARD
 @Composable
 private fun PrivacyPanel(
     blocked: Int,
@@ -944,7 +1005,10 @@ private fun PrivacyPanel(
                 Text("Ad blocking")
             },
             supportingContent = {
-                Text(if (settings.adBlocking) "Enabled" else "Disabled")
+                Text(
+                    if (settings.adBlocking) "Enabled"
+                    else "Disabled"
+                )
             },
             leadingContent = {
                 Icon(Icons.Default.Shield, null)
@@ -991,6 +1055,7 @@ private fun PrivacyPanel(
     }
 }
 
+// SETTINGS PANEL
 @Composable
 private fun SettingsPanel(
     s: BrowserSettings,
@@ -1028,13 +1093,19 @@ private fun SettingsPanel(
                 Text(
                     "Appearance",
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+                    modifier = Modifier.padding(
+                        top = 12.dp,
+                        bottom = 6.dp
+                    )
                 )
             }
 
             item {
 
-                Text("Theme", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Theme",
+                    style = MaterialTheme.typography.bodyMedium
+                )
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1243,6 +1314,7 @@ private fun SettingsPanel(
     }
 }
 
+// REUSABLE SETTINGS SWITCH
 @Composable
 private fun SettingSwitch(
     label: String,
