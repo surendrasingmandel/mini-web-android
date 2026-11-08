@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.Lifecycle
@@ -210,6 +212,7 @@ private fun AppLockScreen(
     onChangePin: () -> Unit
 ) {
     var value by remember { mutableStateOf("") }
+    var reveal by remember { mutableStateOf(false) }
     val biometricAvailable = remember {
         BiometricManager.from(androidx.compose.ui.platform.LocalContext.current)
             .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
@@ -233,6 +236,14 @@ private fun AppLockScreen(
             label = { Text("PIN or password") },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { reveal = !reveal }) {
+                    Icon(
+                        imageVector = if (reveal) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (reveal) "Hide password" else "Show password"
+                    )
+                }
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             shape = RoundedCornerShape(16.dp)
         )
