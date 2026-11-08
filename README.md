@@ -63,3 +63,9 @@ Browsing history, bookmarks and preferences are stored on-device. Search request
 The workflow builds with JDK 17 and Gradle 8.9, installs Android SDK 35, runs unit tests, and uploads the debug APK. The app's `minSdk` is 31 (Android 12).
 
 For easiest setup, keep the repository public. Never upload signing keys, passwords, API secrets, or private credentials to the repository.
+
+## Homepage and navigation update
+
+The current development build includes a Mini Web start page, persistent custom wallpaper selection, quick links, Downloads screen backed by Android DownloadManager, and corrected Android back handling (web history first, then Mini Web home, then exit confirmation).
+
+Private browsing and background/lock-screen media playback are not yet implemented in this update. The private-mode homepage action intentionally displays an explanation instead of pretending that normal WebView cookies/storage are isolated. Background media requires a dedicated media-session integration and site compatibility testing; it is not claimed as complete here.
