@@ -671,12 +671,9 @@ fun BrowserScreen(
 
                         webView = this
 
-                        val initial =
-                            browserSettings.homepage.ifBlank {
-                                "https://duckduckgo.com"
-                            }
-
-                        loadUrl(initial)
+                        // Keep the WebView idle on startup.
+                        // Mini Web's branded Compose homepage is the default screen.
+                        // A website is loaded only after the user searches or opens a shortcut.
                     }
                 },
 
@@ -1486,7 +1483,7 @@ private fun MiniWebHome(
                 Modifier.fillMaxSize().background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            MaterialTheme.colorScheme.primary,
                             MaterialTheme.colorScheme.background,
                             MaterialTheme.colorScheme.surface
                         )
@@ -1534,7 +1531,7 @@ private fun MiniWebHome(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(30.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = if (wallpaperUri.isNotBlank()) .96f else 1f),
+                color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 5.dp
             ) {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1582,7 +1579,7 @@ private fun MiniWebHome(
                     Surface(
                         modifier = Modifier.weight(1f).clickable { onOpenShortcut(url) },
                         shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+                        color = MaterialTheme.colorScheme.surface,
                         tonalElevation = 2.dp
                     ) {
                         Column(Modifier.padding(vertical = 14.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
