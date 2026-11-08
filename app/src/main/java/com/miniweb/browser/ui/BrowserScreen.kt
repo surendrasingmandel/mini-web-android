@@ -1,6 +1,7 @@
 
 package com.miniweb.browser.ui
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
