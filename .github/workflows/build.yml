@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "**.zip"
+      - "**.kt"
+      - "**.kts"
+      - "**.xml"
+      - "**.properties"
       - ".github/workflows/build.yml"
 
 permissions:
@@ -42,55 +45,28 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Verify Android project at repository root
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+          echo "Android project found at repository root."
+
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.9"
 
-      - name: Find and extract Android project ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p extracted
-          found=""
-          while IFS= read -r -d '' archive; do
-            echo "Checking archive: $archive"
-            if unzip -Z1 "$archive" | grep -Eq '(^|/)app/build.gradle.kts$'; then
-              found="$archive"
-              break
-            fi
-          done < <(find . -maxdepth 4 -type f -iname '*.zip' -print0)
-
-          if [ -z "$found" ]; then
-            echo "No ZIP containing app/build.gradle.kts was found."
-            echo "Files in repository:"
-            find . -maxdepth 4 -type f -print
-            exit 1
-          fi
-
-          echo "Using archive: $found"
-          unzip -q "$found" -d extracted
-          BUILD_FILE="$(find extracted -type f -path '*/app/build.gradle.kts' -print -quit)"
-          if [ -z "$BUILD_FILE" ]; then
-            echo "Could not locate app/build.gradle.kts after extraction."
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$(dirname "$BUILD_FILE")")"
-          echo "MINI_WEB_PROJECT_DIR=$GITHUB_WORKSPACE/$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project directory: $PROJECT_DIR"
-
       - name: Build debug APK and run unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$MINI_WEB_PROJECT_DIR"
-          gradle assembleDebug testDebugUnitTest --no-daemon
+        run: gradle assembleDebug testDebugUnitTest --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: mini-web-debug-apk
-          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -99,6 +75,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mini-web-test-reports
-          path: extracted/**/app/build/reports/tests/
+          path: app/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 7
